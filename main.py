@@ -6,8 +6,7 @@ from fastapi import FastAPI
 from bcrypt import checkpw, hashpw, gensalt
 from uuid import UUID
 
-from shared.models.User import User
-from shared.models.UserProfile import UserProfile
+from shared.models.User import User, UserProfile
 
 app = FastAPI()
 
