@@ -1,7 +1,9 @@
 from typing import Optional, List, Dict
+import random
+import string
 
 from fastapi import FastAPI
-from bcrypt import checkpw
+from bcrypt import checkpw, hashpw, gensalt
 from uuid import UUID
 
 from shared.models.User import User
@@ -43,12 +45,65 @@ def signup(username: str, password: str):
 		pending_users[username] = user
 		return user
 
+@app.delete("/login/password/change")
+def change_password(username: str, old_pass: str="", new_pass: str=""):
+	password_len = 8
+	user = valid_users.get(username)
+
+	if user is None:
+		return { "message": "user does not exist!" }
+
+	if old_pass == "" or new_pass == "":
+		characters = string.ascii_lowercase
+		temp_pass = "".join(random.choice(characters) for i in range(password_len))
+
+		user.password = temp_pass
+		user.passphrase = hashpw(temp_pass.encode(), gensalt())
+
+		return user
+
+	if user.password == old_pass:
+		user.password = new_pass
+		user.passphrase = hashpw(new_pass.encode(), gensalt())
+		return user
+	else:
+		return { "message" : "invalid credentials" }
+
+@app.post("/login/password/unlock")
+def unlock_password(username: Optional[str]=None, id: Optional[UUID]=None):
+	if username is None:
+		return { "message" : "a username is required" }
+
+	user = valid_users.get(username)
+
+	if user is None:
+		return { "message": "user does not exist!" }
+
+	if id is None:
+		return { "message": "token needed" }
+
+	if user.id != id:
+		return { "message": "invalid token" }
+	else:
+		return { "password": user.password }
+
 @app.delete("/login/remove/all")
 def delete_users(usernames: List[str]):
 	for user in usernames:
 		del valid_users[user]
 
 	return { "message" : "deleted users" }
+
+@app.post("/login/username/unlock")
+def unlock_username(id: Optional[UUID]=None):
+	if id is None:
+		return { "message": "token needed" }
+
+	for key, val in valid_users.items():
+		if val.id == id:
+			return { "username": val.username }
+
+		return { "message": "user does not exist!" }
 
 # dynamic pathing declared after fixed pathings of same base dirs
 @app.get("/login/{username}/{password}")
@@ -64,14 +119,14 @@ def login_with_token(username: str, password: str, id: UUID):
 	return user
 
 @app.patch("/account/profile/update/names/{username}")
-def update_profile_names(username: str, id: UUID, new_names: Dict[str,str]):
+def update_profile_names(id: UUID, username: str="", new_names: Optional[Dict[str,str]]=None):
 	user = valid_users.get(username)
 
 	if user is None or user.id != id:
 		return { "message": "user does not exist" }
 
 	if new_names is None:
-		return { "message": "No parameters to update" }
+		return { "message": "New nmes are required" }
 
 	profile = valid_profiles[username]
 	profile.firstname = new_names["firstname"]
@@ -106,3 +161,10 @@ def delete_discussion(username: str, id: UUID):
 	del discussion_posts[id]
 
 	return { "message": "post was successfully deleted!" }
+
+@app.delete("/delete/users/pending")
+def delete_pending_users(accounts: List[str]=[]):
+	for user in accounts:
+		del pending_users[user]
+
+	return { "message": "deleted pending users" }
