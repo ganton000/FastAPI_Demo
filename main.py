@@ -4,9 +4,9 @@ import string
 
 from fastapi import FastAPI
 from bcrypt import checkpw, hashpw, gensalt
-from uuid import UUID
+from uuid import UUID, uuid1
 
-from shared.models.User import User, UserProfile
+from shared.models.User import User, UserProfile, ValidUser
 
 app = FastAPI()
 
@@ -43,6 +43,32 @@ def signup(username: str, password: str):
 		user = User(username, password)
 		pending_users[username] = user
 		return user
+
+@app.post("/login/validate", response_model=ValidUser)
+def approve_user(user: User):
+	user = valid_users.get(user.username)
+
+	if user is None:
+		return ValidUser(
+			id=None,
+			username=None,
+			password=None,
+			passphrase=None
+		)
+	else:
+		valid_user = ValidUser(
+			id=uuid1(),
+			username=user.username,
+			password=user.password,
+			passphrase=hashpw(user.password.encode(),
+				gensalt())
+		)
+
+		valid_users[user.username] = valid_user
+
+		del pending_users[user.username]
+
+		return valid_user
 
 @app.delete("/login/password/change")
 def change_password(username: str, old_pass: str="", new_pass: str=""):
