@@ -1,12 +1,21 @@
-from typing import Optional, List, Dict
 import random
 import string
+from typing import Optional, List, Dict
+from datetime import datetime
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, Form
 from bcrypt import checkpw, hashpw, gensalt
 from uuid import UUID, uuid1
 
-from shared.models.User import User, UserProfile, ValidUser
+from shared.models.User import (
+	User,
+	UserProfile,
+	ValidUser,
+	UserType
+)
+from shared.models.Post import Post, PostType
+from shared.models.Forum import ForumDiscussion, ForumPost
+
 
 app = FastAPI()
 
@@ -15,6 +24,7 @@ valid_users = [ "Harry", "Emily" ]
 pending_users = {}
 valid_profiles = {}
 discussion_posts = {}
+request_headers = {}
 
 
 ''' REST APIs '''
@@ -69,6 +79,22 @@ def approve_user(user: User):
 		del pending_users[user.username]
 
 		return valid_user
+
+@app.get("/headers/verify")
+def verify_headers(
+	host: Optional[str]=Header(None),
+	accept: Optional[str]=Header(None),
+	accept_language: Optional[str]=Header(None),
+	accept_encoding: Optional[str]=Header(None),
+	user_agent: Optional[str]=Header(None)
+):
+	request_headers["Host"] = host
+	request_headers["Accept"] = accept
+	request_headers["Accept-Language"] = accept_language
+	request_headers["Accept-Encoding"] = accept_encoding
+	request_headers["User-Agent"] = user_agent
+
+	return request_headers
 
 @app.delete("/login/password/change")
 def change_password(username: str, old_pass: str="", new_pass: str=""):
@@ -162,6 +188,43 @@ def update_profile_names(id: UUID, username: str="", new_names: Optional[Dict[st
 
 	return { "message": "successfuly updated information" }
 
+# need python-multipart module for Form() to work
+@app.post("/account/profile/add", response_model=UserProfile)
+def add_profile(
+	username: str,
+	fname: str=Form(...),
+	lname: str=Form(...),
+	mid_init: str=Form(...),
+	user_age: int=Form(...),
+	salary: float=Form(...),
+	bday: str=Form(...),
+	utype: UserType=Form(...)
+):
+	user = valid_users.get(username)
+	if user is None:
+		return UserProfile(
+			firstname=None,
+			lastname=None,
+			middle_initial=None,
+			age=None,
+			birthday=None,
+			salary=None,
+			user_type=None
+		)
+	else:
+		profile = UserProfile(
+			firstname=fname,
+			lastname=lname,
+			middle_initial=mid_init,
+			age=user_age,
+			birthday=datetime.strptime(bday, '%m/%d/%Y'),
+			salary=salary,
+			user_type=utype
+		)
+		valid_profiles[username] = profile
+		return profile
+
+
 # override existing profile
 @app.put("/account/profile/update/{username}")
 def update_profile(username: str, id: UUID, new_profile: UserProfile):
@@ -172,6 +235,37 @@ def update_profile(username: str, id: UUID, new_profile: UserProfile):
 	else:
 		valid_profiles[username] = new_profile
 		return { "message": "Successfully updated profile!" }
+
+@app.post("/discussion/posts/add/{username}")
+def post_discussion(username: str, post: Post, post_type: PostType):
+	user = valid_users.get(username)
+
+	if user is None:
+		return { "message" : "user does not exist!" }
+
+	discussion = discussion_posts.get(id)
+
+	if discussion is not None:
+		return { "message": "post already exists!" }
+
+	forum_post = ForumPost(
+		id=uuid1(),
+		topic=post.topic,
+		message=post.message,
+		post_type=post_type,
+		date_posted=post.date_posted,
+		username=username
+	)
+	user = valid_profiles[username]
+	forum = ForumDiscussion(
+		id=uuid1(),
+		main_post=forum_post,
+		author=user,
+		replies=list()
+	)
+
+	discussion_posts[forum.id] = forum
+	return forum
 
 @app.delete("/discussion/posts/remove/{username}")
 def delete_discussion(username: str, id: UUID):
